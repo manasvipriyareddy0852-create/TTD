@@ -1,32 +1,49 @@
+import streamlit as st
+import requests
+import pandas as pd
 
+# -------------------------------
+# CONFIGURATION
+# -------------------------------
+API_KEY = "YOUR_API_KEY"
+BASE_URL = "https://newsapi.org/v2/top-headlines"
 
-# -----------------------
-# SIDEBAR
-# -----------------------
-st.sidebar.title("📰 News Explorer")
+st.set_page_config(
+    page_title="Global News Dashboard",
+    page_icon="📰",
+    layout="wide"
+)
 
-countries = {
-    "India": "in",
-    "United States": "us",
-    "United Kingdom": "gb",
-    "Australia": "au",
-    "Canada": "ca",
-    "Germany": "de",
-    "France": "fr",
-    "Japan": "jp"
-}
+# -------------------------------
+# TITLE
+# -------------------------------
+st.title("📰 Global News Dashboard")
+st.markdown("Stay updated with the latest headlines worldwide.")
+
+# -------------------------------
+# SIDEBAR FILTERS
+# -------------------------------
+st.sidebar.header("News Filters")
 
 country = st.sidebar.selectbox(
     "Select Country",
-    list(countries.keys())
+    {
+        "India": "in",
+        "United States": "us",
+        "United Kingdom": "gb",
+        "Canada": "ca",
+        "Australia": "au",
+        "Germany": "de",
+        "France": "fr"
+    }
 )
 
 category = st.sidebar.selectbox(
     "Select Category",
     [
-        "general",
         "business",
         "entertainment",
+        "general",
         "health",
         "science",
         "sports",
@@ -39,98 +56,103 @@ keyword = st.sidebar.text_input(
     placeholder="AI, Cricket, Tesla..."
 )
 
-article_count = st.sidebar.slider(
+num_articles = st.sidebar.slider(
     "Number of Articles",
     min_value=5,
     max_value=50,
     value=10
 )
 
-# -----------------------
-# TITLE
-# -----------------------
-st.title("🌍 Advanced News Explorer")
-st.markdown(
-    "Get the latest headlines from around the world."
-)
-
-# -----------------------
+# -------------------------------
 # FETCH NEWS
-# -----------------------
-params = {
-    "apiKey": API_KEY,
-    "country": countries[country],
-    "category": category,
-    "pageSize": article_count
-}
+# -------------------------------
+def fetch_news(country, category, keyword):
+    params = {
+        "apiKey": API_KEY,
+        "country": country,
+        "category": category,
+        "pageSize": num_articles
+    }
 
-response = requests.get(BASE_URL, params=params)
-
-if response.status_code == 200:
-
-    data = response.json()
-    articles = data.get("articles", [])
-
-    # Keyword Filter
     if keyword:
-        articles = [
-            article for article in articles
-            if keyword.lower() in (
-                (article.get("title") or "") +
-                (article.get("description") or "")
-            ).lower()
-        ]
+        params["q"] = keyword
 
-    st.success(f"Found {len(articles)} articles")
+    response = requests.get(BASE_URL, params=params)
 
-    if not articles:
-        st.warning("No matching articles found.")
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error(f"Error {response.status_code}: Unable to fetch news")
+        return None
 
-    for article in articles:
+# -------------------------------
+# BUTTON
+# -------------------------------
+if st.sidebar.button("Fetch News"):
+    with st.spinner("Fetching latest headlines..."):
+        news_data = fetch_news(country, category, keyword)
 
-        with st.container():
+    if news_data and news_data["status"] == "ok":
 
-            col1, col2 = st.columns([1, 2])
+        articles = news_data["articles"]
+
+        st.success(f"Found {len(articles)} articles")
+
+        for article in articles[:num_articles]:
+
+            st.divider()
+
+            col1, col2 = st.columns([1, 3])
 
             with col1:
-                if article.get("urlToImage"):
+                if article["urlToImage"]:
                     st.image(
                         article["urlToImage"],
                         use_container_width=True
                     )
 
             with col2:
+                st.subheader(article["title"])
 
-                st.subheader(article.get("title", "No Title"))
-
-                source = article.get("source", {}).get("name", "Unknown Source")
-                published = article.get("publishedAt", "")
-
-                try:
-                    published = datetime.strptime(
-                        published,
-                        "%Y-%m-%dT%H:%M:%SZ"
-                    ).strftime("%d %b %Y %H:%M")
-                except:
-                    pass
-
-                st.caption(f"📰 {source} | 📅 {published}")
-
-                st.write(
-                    article.get(
-                        "description",
-                        "No description available."
+                if article["source"]:
+                    st.caption(
+                        f"Source: {article['source']['name']}"
                     )
+
+                if article["description"]:
+                    st.write(article["description"])
+
+                st.markdown(
+                    f"[Read Full Article]({article['url']})"
                 )
 
-                st.link_button(
-                    "Read Full Article",
-                    article["url"]
-                )
+    else:
+        st.warning("No articles found.")
 
-            st.divider()
+# -------------------------------
+# DATA TABLE VIEW
+# -------------------------------
+st.markdown("---")
+st.subheader("📊 News Overview Table")
 
-else:
-    st.error(
-        f"Error fetching news: {response.status_code}"
-    )
+if st.button("Show News Table"):
+
+    news_data = fetch_news(country, category, keyword)
+
+    if news_data and news_data["status"] == "ok":
+
+        records = []
+
+        for article in news_data["articles"]:
+            records.append({
+                "Title": article["title"],
+                "Source": article["source"]["name"],
+                "Published": article["publishedAt"]
+            })
+
+        df = pd.DataFrame(records)
+
+        st.dataframe(
+            df,
+            use_container_width=True
+        )
